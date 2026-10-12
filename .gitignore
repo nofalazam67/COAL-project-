@@ -1,0 +1,16 @@
+# Build outputs
+*.obj
+*.exe
+*.ilk
+*.pdb
+*.lst
+
+# Files created by the game at runtime
+dungeon.sav
+halloffame.txt
+
+# Visual Studio
+.vs/
+Debug/
+Release/
+*.user
