@@ -1,215 +1,165 @@
 ---
 title: "Dungeon of Assembly: Project Summary"
-subtitle: "COAL (Computer Organization & Assembly Language) Lab Project"
+subtitle: "COAL (EE2003) Lab Project"
 ---
 
 # 1. Project overview
 
-**Dungeon of Assembly** is a console-based dungeon survival RPG written entirely in
-**x86 (32-bit) Assembly language** using **MASM** and the **Irvine32 library**.
+**Dungeon of Assembly** is a text-based dungeon RPG written in **x86 (32-bit)
+Assembly language** with **MASM** and the **Irvine32 library**.
 
-The player explores a small open world drawn in ASCII and colour. At every step the
-player chooses what to do from a menu (move north, south, west or east, drink a potion,
-rest, save). Walking reveals the map and earns points. Random monsters ambush the player
-and are fought in turn-based combat. The player collects gold, buys upgrades, finds a
-hidden key and finally defeats the Dragon King to win.
+The whole map is printed on the console. The player (`@`) chooses an action from a menu
+each turn: move up, down, left or right, drink a potion, save or quit. Every step earns
+a point. While walking, random enemies attack and are fought in turn-based battles.
+The player collects gold from chests, buys items in the shop, finds the key and finally
+defeats the Dragon in the boss room.
 
-**Language / tools:** x86 Assembly (MASM), Irvine32, Visual Studio (or `ml.exe` + `link.exe`)
-**Size:** about 2,350 lines of assembly in one source file (`DungeonRPG.asm`)
-**Platform:** Windows console (80 x 25 or larger)
+- **Language / tools:** x86 Assembly (MASM), Irvine32, Visual Studio
+- **Size:** about 970 lines of code (not counting comments), 29 procedures
+- **Platform:** Windows console
 
-# 2. Aim and objectives
+# 2. Objectives
 
-- Show practical use of the main COAL topics in one working program.
-- Build an interactive game using only low-level instructions: no high-level language.
-- Use real **file handling** (binary save game and text score file).
-- Keep the design simple and minimalistic: one map, one boss, clear menus.
+- Use the topics of the COAL course in one complete program.
+- Practise low-level programming: registers, memory, the stack and procedures.
+- Use file handling to save the game and keep a high score.
+- Keep the design simple: one map, one boss, clear text menus.
 
-# 3. What the game does
+# 3. Game features
 
-## 3.1 Story and goal
-The Dragon King threatens the realm. The hero must find the **Ancient Key** hidden in the
-Ruined Keep, open the lair gate in the far east and defeat the dragon.
-
-## 3.2 The open world
-- A 40 x 15 tile map split into 4 zones: **Green Meadows**, **Whispering Woods**,
-  **Ruined Keep** and **Dragon Wastes**.
-- **Fog of war:** the map starts hidden and is revealed as the player walks. Each newly
-  discovered tile gives **+1 point**.
-- Map objects:
+## 3.1 The map
+A 15 × 40 map is stored as a **two-dimensional array** of characters and printed
+completely every turn.
 
 | Symbol | Meaning |
 |---|---|
-| `@` | The player |
-| `#` (block) | Wall: cannot be crossed |
-| `~` | Deep water: cannot be crossed |
-| `$` | Shop: buy potions and upgrades |
-| `+` | Fountain: fully restores HP (unlimited use) |
-| chest (small square) | Chest: gold, sometimes a potion (+25 points) |
-| `K` | The Ancient Key (+100 points) |
-| `B` | The Dragon King's lair (needs the key) |
+| `@` | Player |
+| `#` | Wall (cannot pass) |
+| `~` | Water (cannot pass) |
+| `.` | Ground (enemies can appear here) |
+| `C` | Chest: 10 to 30 gold, +20 points |
+| `$` | Shop |
+| `+` | Fountain: full HP |
+| `K` | Key: needed for the boss room, +50 points |
+| `B` | Boss room (the Dragon) |
 
-## 3.3 Random encounters and combat
-- There is a 12% chance of a monster ambush on each step on open ground.
-- Enemies get stronger further east and as the player levels up: Cave Slime, Goblin
-  Raider, Skeleton Knight, Orc Brute, Shadow Wraith.
-- Combat is turn-based. Each turn the player picks an action, then the enemy attacks.
-- 10% of hits are **critical hits** (double damage).
-- The **Dragon King** (final boss) has 250 HP, cannot be escaped from and breathes fire
-  (1.5x damage) every third turn.
+## 3.2 Battles
+- There is a 15% chance of an enemy on every step on ground.
+- There are 4 enemies (Slime, Goblin, Skeleton, Orc). Stronger ones appear further east
+  and they get more HP as the player levels up.
+- Battle menu: **1. Attack**, **2. Drink Potion**, **3. Run Away** (50% chance).
+- Damage = attack + random(0 .. attack/2) − defense/2, with a 10% chance of a
+  critical hit (double damage).
+- The **Dragon** (180 HP) is the final boss. You cannot run away from it.
 
-## 3.4 Progression
-- **XP and levels:** each level gives +20 max HP, +3 attack, +2 defence and a full heal.
-  XP needed for the next level = level x 50.
-- **Gold:** earned from enemies and chests, spent in the shop.
-- **Score:** exploration, chests, key, kills, level-ups and the boss all add points.
+## 3.3 Player progress
+- **XP and levels:** the next level needs level × 50 XP. Each level gives +20 max HP,
+  +3 attack, +2 defense and a full heal.
+- **Gold:** from enemies and chests.
+- **Score:** +1 per step, +20 per chest, +50 for the key, +XP per enemy,
+  +500 for the Dragon.
 
-## 3.5 Shop
-| Item | Effect | Base price |
+## 3.4 Shop
+| Item | Effect | Starting price |
 |---|---|---|
-| Healing Potion | +40 HP when used | 15 g (fixed) |
-| Sharpen Sword | +3 Attack | 40 g |
-| Iron Armour | +2 Defence | 35 g |
-| Vitality Charm | +20 Max HP | 50 g |
+| Potion | +30 HP when used | 15 gold |
+| Sharpen Sword | +3 attack | 40 gold (+20 after each buy) |
+| Iron Armor | +2 defense | 35 gold (+20 after each buy) |
 
-Upgrade prices go up each time an item is bought (price x number bought + 1).
+## 3.5 Files
+- **Save / load game:** `dungeon.sav` holds a 4-byte header `DUNG`, then the player
+  name, all stats and the map. When loading, the header is checked first.
+- **High score:** `highscore.txt` stores the best score as text. It is shown on the main
+  menu and updated when a game ends with a new record.
 
-## 3.6 Save, load and hall of fame
-- **Save game:** writes the whole game state to `dungeon.sav` (binary, XOR-encrypted, with a
-  signature so corrupted or wrong files are rejected).
-- **Load game:** reads and checks the file, then restores the exact game.
-- **Hall of Fame:** when a game ends (win or lose) a line with name, score, level, kills and
-  result is added to the text file `halloffame.txt`. It can be viewed from the title menu.
+# 4. Menus
 
-# 4. Menus and options
+**Main menu:** 1. New Game, 2. Load Game, 3. How to Play, 4. Exit
 
-## 4.1 Title menu
-| Key | Option |
-|---|---|
-| 1 | New Adventure (asks for a hero name) |
-| 2 | Load Saved Game |
-| 3 | Hall of Fame |
-| 4 | How to Play |
-| 5 | Exit |
+**Game screen:**
 
-## 4.2 Exploration menu
 | Key | Action |
 |---|---|
-| 1 / W / Up arrow | Move north |
-| 2 / S / Down arrow | Move south |
-| 3 / A / Left arrow | Move west |
-| 4 / D / Right arrow | Move east |
-| 5 | Drink a potion (+40 HP) |
-| 6 | Rest / camp (+25% HP, 35% chance of an ambush) |
-| 7 | Save game |
-| 8 | Quit to the title screen |
+| W or 1 | Move up |
+| S or 2 | Move down |
+| A or 3 | Move left |
+| D or 4 | Move right |
+| 5 | Drink potion |
+| 6 | Save game |
+| 7 | Quit to main menu |
 
-## 4.3 Battle menu
-| Key | Action |
+**Battle:** 1. Attack, 2. Drink Potion, 3. Run Away
+
+**Shop:** 1. Potion, 2. Sword, 3. Armor, 4. Leave
+
+# 5. Course topics used
+
+| Course topic (week) | Where it is used |
 |---|---|
-| 1 | Attack |
-| 2 | Heavy Strike (60% chance to hit, double damage) |
-| 3 | Drink potion (does not use up the turn if you have none) |
-| 4 | Flee (50% chance; not possible against the boss) |
-
-## 4.4 Shop menu
-Keys 1 to 4 buy the items shown above, and 0 leaves the shop.
-
-## 4.5 Game screens
-Title screen, How to Play, exploration screen (map + status panel), battle screen,
-shop screen, Victory screen, Game Over screen and Hall of Fame. Screenshots are in
-`docs/screenshots/`.
-
-# 5. COAL concepts demonstrated
-
-| COAL topic | How it is used in the game |
-|---|---|
-| Data definition and arrays | Map, enemy table, lookup tables, text buffers |
-| Constants and equates | Map size, flags, colours, prices |
-| Structures | `PlayerT` (player stats) and `EnemyT` (enemy stats) |
-| Macros | Six macros for cursor movement, colour and printing |
-| Procedures and the stack | About 60 procedures with parameters, local variables and saved registers |
-| Recursion | Number-to-text conversion calls itself on `n / 10` |
-| Addressing modes | Direct, indirect, indexed and scaled (`table[reg*4]`) |
-| Arithmetic | `ADD`, `SUB`, `MUL`, `IMUL`, `DIV` for damage, XP, HP bars, prices |
-| Shifts | Map index `y*40 = (y<<5)+(y<<3)`, halving and doubling values |
-| Bitwise logic | Bit flags for key and boss, case conversion, XOR encryption |
-| Branching and loops | Conditional jumps (signed and unsigned), `LOOP`, `JECXZ`, nested loops |
-| String instructions | `MOVSB`, `STOSB`, `LODSB`, `SCASB`, `REP`, `REPNE`, `CLD`, `STD` |
-| Table lookup | `XLAT` converts a map character to a colour and symbol |
-| Jump tables | Keyboard commands and shop items are called through address tables |
-| File handling | Binary save file and appended text score file |
-| Console I/O | Cursor control, colours, key input, animation delays |
-| Random numbers | Encounters, damage, loot and enemy choice |
+| Defining data, symbolic constants (3) | Map, arrays, strings; `ROWS = 15`, `YES EQU 1` |
+| Data transfer, addressing, arithmetic (4) | `MOV`, `MOVZX`, `ADD`, `SUB`, `INC`, `DEC` everywhere |
+| Operators and directives (5) | `OFFSET`, `PTR`, `TYPE`, `LENGTHOF`, `LABEL` |
+| Control transfer, arrays and loops (5) | `JMP`, `LOOP`; parallel enemy arrays, prices array |
+| Procedures, runtime stack, PUSH/POP (7) | 29 procedures; registers saved with `PUSH`/`POP` and `USES` |
+| Boolean and comparison, conditional jumps (8) | `AND`/`OR` for letter case, `TEST`, `CMP`, `JE`/`JNE`/`JA`/`JB`... |
+| Conditional loops, high-level constructs (9) | `LOOPNZ` in `UpperName`; `.IF/.ELSE` in `DrinkPotion` |
+| Shift, multiplication and division (10) | `SHL`/`SHR` in damage; `MUL`/`DIV` for HP bar, XP, map index, zones |
+| Extended addition (10) | 64-bit damage total with `ADD` + `ADC` |
+| Stack frames (12) | `CalcDamage` reads parameters at `[ebp+8]`, `[ebp+12]`, ends with `RET 8` |
+| Recursion (12) | `IntToStr` calls itself to convert the score to text |
+| INVOKE, ADDR, PROC, PROTO, LOCAL (12) | `ShowBar` and `SaveToFile` |
+| String primitives (13) | `MOVSB`, `MOVSD`, `STOSB`, `LODSB`, `SCASB`, `CMPSB` with `REP`/`REPE`/`REPNE` |
+| Two-dimensional arrays (13) | The map: `gameMap[row*COLS + col]` with base-index addressing |
+| File handling (Irvine32) | Save/load game and high score file |
 
 # 6. Libraries and functions used
 
-## 6.1 Irvine32 library procedures
-`Clrscr`, `Gotoxy`, `SetTextColor`, `WriteChar`, `WriteString`, `WriteDec`, `Crlf`,
-`ReadChar`, `ReadString`, `Randomize`, `RandomRange`, `Delay`, `Str_copy`,
+**Irvine32 procedures:** `Clrscr`, `SetTextColor`, `WriteString`, `WriteChar`,
+`WriteDec`, `Crlf`, `ReadChar`, `ReadString`, `Randomize`, `RandomRange`,
 `CreateOutputFile`, `OpenInputFile`, `WriteToFile`, `ReadFromFile`, `CloseFile`.
 
-## 6.2 Windows API (through SmallWin.inc)
-`CreateFile`, `SetFilePointer`, `ExitProcess`.
+**Instructions:** `MOV`, `MOVZX`, `PUSH`, `POP`, `ADD`, `SUB`, `INC`, `DEC`, `MUL`,
+`DIV`, `ADC`, `AND`, `OR`, `TEST`, `CMP`, `SHL`, `SHR`, `JMP`, `JE`, `JZ`, `JNE`,
+`JA`, `JAE`, `JB`, `JBE`, `JGE`, `JNC`, `LOOP`, `LOOPNZ`, `CALL`, `RET`, `CLD`,
+`MOVSB`, `MOVSD`, `STOSB`, `LODSB`, `SCASB`, `CMPSB`, `REP`, `REPE`, `REPNE`.
 
-## 6.3 Main CPU instructions
-`MOV`, `MOVZX`, `LEA`, `PUSH`, `POP`, `PUSHFD`, `POPFD`, `XLAT`, `ADD`, `SUB`, `INC`, `DEC`,
-`MUL`, `IMUL`, `DIV`, `AND`, `OR`, `XOR`, `TEST`, `SHL`, `SHR`, `CMP`, `JMP`, `JE`, `JNE`, `JZ`,
-`JNZ`, `JA`, `JAE`, `JB`, `JBE`, `JG`, `JGE`, `JL`, `JC`, `JNC`, `JECXZ`, `LOOP`, `CALL`, `RET`,
-`CLD`, `STD`, `MOVSB`, `MOVSD`, `STOSB`, `STOSD`, `LODSB`, `SCASB`, `REP`, `REPNE`.
+**Directives:** `INCLUDE`, `.data`, `.code`, `BYTE`, `DWORD`, `SDWORD`, `DUP`, `=`,
+`EQU`, `LABEL`, `OFFSET`, `PTR`, `TYPE`, `LENGTHOF`, `PROC`, `ENDP`, `USES`,
+`LOCAL`, `PROTO`, `INVOKE`, `ADDR`, `.IF`, `.ELSE`, `.ENDIF`.
 
-## 6.4 MASM directives
-`INCLUDE`, `.data`, `.code`, `END`, `BYTE`, `DWORD`, `SDWORD`, `DUP`, `LABEL`, `=` (equate),
-`STRUCT`/`ENDS`, `SIZEOF`, `TYPE`, `OFFSET`, `ADDR`, `PTR`, `PROC`/`ENDP`, `USES`, `LOCAL`,
-`PROTO`, `INVOKE`, `MACRO`/`ENDM`.
-
-A one-line definition of each item is in `docs/INSTRUCTION_REFERENCE.md`.
+Definitions of all of these are in `INSTRUCTION_REFERENCE.md`.
 
 # 7. Program structure
 
 ```
-main  -->  Title menu
-             |-- New Game  --> PlayGame loop
-             |-- Load Game --> PlayGame loop
-             |-- Hall of Fame
-             |-- How to Play
-             '-- Exit
+main (menu)
+ |-- 1. New Game  --> NewGame --> PlayGame
+ |-- 2. Load Game --> LoadGame --> PlayGame
+ |-- 3. How to Play
+ '-- 4. Exit
 
 PlayGame loop:
-   draw screen --> read key --> jump table --> run action
-        |
-        |-- Move  --> reveal map, then shop / fountain / chest / key / boss gate / random fight
-        |-- Potion, Rest, Save, Quit
-        |
-   HP = 0       --> Game Over screen --> write to Hall of Fame
-   Boss defeated --> Victory screen  --> write to Hall of Fame
+   DrawScreen (map + ShowStats) --> ReadChar
+     |-- W/A/S/D or 1-4 --> MovePlayer
+     |        |-- wall / water: message
+     |        |-- C chest, K key, + fountain, $ Shop
+     |        |-- B: BossBattle (needs the key)
+     |        '-- ground: 15% RandomBattle --> Battle --> CalcDamage, CheckLevelUp
+     |-- 5 DrinkPotion   |-- 6 SaveGame   '-- 7 back to the menu
+   HP = 0       --> EndScreen (Game Over) --> high score check
+   Dragon dead  --> EndScreen (You Won)   --> high score check
 ```
 
-# 8. Files
+# 8. Testing
 
-| File | Purpose |
-|---|---|
-| `DungeonRPG.asm` | Complete source code |
-| `build.bat` | Builds the project from a Visual Studio command prompt |
-| `README.md` | Build steps, controls, formulas, save-file layout |
-| `docs/INSTRUCTION_REFERENCE.md` | Every instruction and function used, with definitions |
-| `docs/screenshots/` | Screenshots of each game screen |
-| `dungeon.sav` | Created by the game: encrypted binary save |
-| `halloffame.txt` | Created by the game: text list of results |
+- The program assembles with 0 errors and 0 warnings.
+- 40 test runs with random key presses showed no crashes.
+- Full games were played from start to the Dragon (win and lose).
+- Saving and loading restores the same position, stats and map. A damaged or missing
+  save file shows an error message.
 
-# 9. Testing done
+# 9. Possible improvements
 
-- The source assembles with **0 errors and 0 warnings**.
-- 40 automated games with 3,000 random key presses each ran with **no crashes**.
-- An automated player completed the full game (key, shop, boss, victory) in 8 of 10 test runs.
-- Saving and loading restores the exact game; corrupted or missing save files show an error.
-
-*Note: testing was done with a MASM-compatible assembler on Linux. Please run it once in
-Visual Studio on Windows before submission.*
-
-# 10. Possible future improvements
-
-- Larger map with more zones and several bosses.
-- Inventory with weapons and armour that can be equipped.
-- Sound effects using the Windows `Beep` function.
-- Multiple save slots.
+- More enemy types and a bigger map
+- Sound with the Windows `Beep` function
+- More than one save slot
