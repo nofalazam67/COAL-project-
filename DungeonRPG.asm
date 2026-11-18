@@ -54,10 +54,6 @@ mapOriginal BYTE "########################################"
             BYTE "########################################"
 gameMap     BYTE MAP_SIZE DUP(?)   ; copy used while playing
 
-; colors of the map tiles (anything else is light cyan)
-tileChars  BYTE "#~.BKM"
-tileColors DWORD gray, lightBlue, green, lightRed, lightMagenta, red
-
 ; ---------------------- player ------------------------------
 pRow       DWORD ?            ; player position (row)
 pCol       DWORD ?            ; player position (column)
@@ -100,11 +96,6 @@ eAtk       DWORD ?
 eXP        DWORD ?
 eGold      DWORD ?
 isBoss     BYTE NO
-
-; ---------------------- movement keys -----------------------
-moveKeys   BYTE "wsad"
-rowChange  SDWORD -1, 1,  0, 0
-colChange  SDWORD  0, 0, -1, 1
 
 ; ---------------------- other variables ---------------------
 playerIdx  DWORD ?
@@ -256,18 +247,15 @@ gameLoop:
     ret                          ; back to the main menu
 notQuit:
 
-    ; is it a movement key? search it in moveKeys
-    mov edi, OFFSET moveKeys
-    mov ecx, LENGTHOF moveKeys
-    cld
-    repne scasb
-    jne badKey
-    mov esi, LENGTHOF moveKeys - 1
-    sub esi, ecx                 ; ESI = index of the key
-    mov ebx, rowChange[esi * TYPE rowChange]
-    mov ecx, colChange[esi * TYPE colChange]
-    call MovePlayer
-    jmp checkEnd
+    ; movement keys: EBX = row change, ECX = column change
+    cmp al, 'w'
+    je goUp
+    cmp al, 's'
+    je goDown
+    cmp al, 'a'
+    je goLeft
+    cmp al, 'd'
+    je goRight
 
 badKey:
     mov edx, OFFSET msgInvalid
@@ -277,6 +265,25 @@ badKey:
 usePotion:
     call DrinkPotion
     call WaitKey
+    jmp checkEnd
+
+goUp:
+    mov ebx, -1
+    mov ecx, 0
+    jmp doMove
+goDown:
+    mov ebx, 1
+    mov ecx, 0
+    jmp doMove
+goLeft:
+    mov ebx, 0
+    mov ecx, -1
+    jmp doMove
+goRight:
+    mov ebx, 0
+    mov ecx, 1
+doMove:
+    call MovePlayer
 
 checkEnd:
     cmp hp, 0
@@ -395,21 +402,16 @@ showKey:
 ShowStats ENDP
 
 ; ============================================================
-; SetTileColor - sets the text color for the tile in AL
+; SetTileColor - walls are gray, everything else is white
 ;                (AL is not changed)
 ; ============================================================
-SetTileColor PROC USES eax ecx esi
-    mov esi, 0
-    mov ecx, LENGTHOF tileChars
-findTile:
-    cmp al, tileChars[esi]
-    je foundTile
-    inc esi
-    loop findTile
-    mov eax, lightCyan           ; not in the table ($ C +)
+SetTileColor PROC USES eax
+    cmp al, '#'
+    jne notWall
+    mov eax, gray
     jmp setIt
-foundTile:
-    mov eax, tileColors[esi * TYPE tileColors]
+notWall:
+    mov eax, white
 setIt:
     call SetTextColor
     ret

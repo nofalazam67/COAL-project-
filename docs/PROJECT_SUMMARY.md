@@ -15,7 +15,7 @@ the right. The player collects gold from chests, buys items in the shop, finds t
 and finally defeats the Dragon in the boss room.
 
 - **Language / tools:** x86 Assembly (MASM), Irvine32, Visual Studio
-- **Size:** about 710 lines of code (not counting comments), 20 procedures
+- **Size:** about 715 lines of code (not counting comments), 20 procedures
 - **Platform:** Windows console
 
 # 2. Objectives
@@ -101,7 +101,7 @@ completely every turn.
 | Defining data, symbolic constants | Map, arrays, strings; `ROWS = 15`, `YES EQU 1` |
 | Data transfer, addressing, arithmetic | `MOV`, `MOVZX`, `ADD`, `SUB`, `INC`, `DEC` everywhere |
 | Operators and directives | `OFFSET`, `PTR`, `TYPE`, `LENGTHOF` |
-| Control transfer, arrays and loops | `JMP`, `LOOP`; parallel monster arrays, prices array |
+| Control transfer, arrays and loops | `JMP`, `LOOP`; parallel monster arrays, prices array; `CMP`/`JE` chain for W/A/S/D |
 | Procedures, runtime stack, PUSH/POP | 20 procedures; registers saved with `PUSH`/`POP` and `USES` |
 | Boolean and comparison, conditional jumps | `OR` for letter case, `TEST`, `CMP`, `JE`/`JNE`/`JA`/`JB`... |
 | High-level constructs | `.IF/.ELSE` in `DrinkPotion` |
@@ -109,7 +109,7 @@ completely every turn.
 | Extended addition | 64-bit damage total with `ADD` + `ADC` |
 | Stack frames | `CalcDamage` reads parameters at `[ebp+8]`, `[ebp+12]`, ends with `RET 8` |
 | INVOKE, PROC, PROTO, LOCAL | `ShowBar` |
-| String primitives | `REP MOVSD`, `REP MOVSB` in `NewGame`; `REPNE SCASB` for the W/A/S/D keys |
+| String primitives | `REP MOVSD`, `REP MOVSB` in `NewGame` |
 | Two-dimensional arrays | The map: `gameMap[row*COLS + col]` with base-index addressing |
 
 # 6. Libraries and functions used
@@ -119,9 +119,9 @@ completely every turn.
 
 **Instructions:** `MOV`, `MOVZX`, `PUSH`, `POP`, `ADD`, `SUB`, `INC`, `DEC`, `MUL`,
 `DIV`, `ADC`, `OR`, `TEST`, `CMP`, `SHR`, `JMP`, `JE`, `JZ`, `JNE`, `JA`, `JAE`,
-`JB`, `JGE`, `LOOP`, `CALL`, `RET`, `CLD`, `MOVSB`, `MOVSD`, `SCASB`, `REP`, `REPNE`.
+`JB`, `JGE`, `LOOP`, `CALL`, `RET`, `CLD`, `MOVSB`, `MOVSD`, `REP`.
 
-**Directives:** `INCLUDE`, `.data`, `.code`, `BYTE`, `DWORD`, `SDWORD`, `DUP`, `=`,
+**Directives:** `INCLUDE`, `.data`, `.code`, `BYTE`, `DWORD`, `DUP`, `=`,
 `EQU`, `OFFSET`, `PTR`, `TYPE`, `LENGTHOF`, `PROC`, `ENDP`, `USES`, `LOCAL`,
 `PROTO`, `INVOKE`, `.IF`, `.ELSE`, `.ENDIF`.
 
