@@ -8,13 +8,12 @@
 ; ============================================================
 ;  Game idea
 ;  - The whole map is shown on the screen, the player is '@'
-;  - Move with W A S D (or 1 2 3 4)
-;  - While walking, enemies can attack you (random battles)
+;  - Move with W A S D
+;  - Monsters (M) stand on the map. Walking into one starts a
+;    fight. Monsters on the left are weak, on the right strong.
 ;  - Open chests (C) for gold, buy items in the shop ($)
 ;  - Heal at the fountain (+), find the key (K)
 ;  - Use the key to open the boss room (B) and kill the Dragon
-;  - Game can be saved / loaded and the high score is kept
-;    in a text file
 ; ============================================================
 
 INCLUDE Irvine32.inc
@@ -23,46 +22,43 @@ INCLUDE Irvine32.inc
 ROWS        = 15
 COLS        = 40
 MAP_SIZE    = ROWS * COLS
-NAME_SIZE   = 20
 ITEM_LEN    = 28              ; every shop item name uses 28 bytes
 BAR_SIZE    = 20              ; length of the HP bar
-CHANCE      = 15              ; % chance of a battle on each step
 POTION_HEAL = 30
+CHEST_GOLD  = 20
 YES         EQU 1
 NO          EQU 0
 
 ; ---------------------- prototypes --------------------------
 ShowBar    PROTO, value:DWORD, maxValue:DWORD
-SaveToFile PROTO, fileName:PTR BYTE, dataAddr:PTR BYTE, dataSize:DWORD
 
 .data
 ; ---------------------- the map (2D array) ------------------
-; #  wall        ~  water        .  ground
+; #  wall        ~  water        .  ground       M  monster
 ; $  shop        +  fountain     C  chest
 ; K  key         B  boss room
 mapOriginal BYTE "########################################"
-            BYTE "#.......~~......#..C........#.........C#"
-            BYTE "#..C....~~...+..#...........#..........#"
+            BYTE "#.......~~..M...#..C........#.........C#"
+            BYTE "#..C..M.~~...+..#......M....#.....M....#"
             BYTE "#.......~~......#...######..#...$......#"
             BYTE "#...........~~..#...#K...#..#..........#"
-            BYTE "#...$.......~~......#....#.......#######"
-            BYTE "#...........~~..#...##.###..#....#.....#"
+            BYTE "#...$.......~~...M..#....#.......#######"
+            BYTE "#.M.........~~..#...##M###..#....#.....#"
             BYTE "#######.....~~..#...........#....#.....#"
             BYTE "#.....#.........#####.#######....#..B..#"
-            BYTE "#..C..#....~~.......#.......C....#.....#"
-            BYTE "#.....#....~~..+....#...+........#.....#"
-            BYTE "#..........~~.......#.......~~~..##.####"
-            BYTE "#......C...~~...C...#.......~~~........#"
+            BYTE "#..C..#....~~....M..#....M..C..M.#.....#"
+            BYTE "#.....#.M..~~..+....#...+........#.....#"
+            BYTE "#..........~~.......#.......~~~..##M####"
+            BYTE "#......C...~~...C...#.......~~~.....M..#"
             BYTE "#..........~~.......#..........+.......#"
             BYTE "########################################"
+gameMap     BYTE MAP_SIZE DUP(?)   ; copy used while playing
 
 ; colors of the map tiles (anything else is light cyan)
-tileChars  BYTE "#~.BK"
-tileColors DWORD gray, lightBlue, green, lightRed, lightMagenta
+tileChars  BYTE "#~.BKM"
+tileColors DWORD gray, lightBlue, green, lightRed, lightMagenta, red
 
-; ------------- everything below is written to the save file -------------
-saveStart  LABEL BYTE
-playerName BYTE NAME_SIZE DUP(0)
+; ---------------------- player ------------------------------
 pRow       DWORD ?            ; player position (row)
 pCol       DWORD ?            ; player position (column)
 hp         DWORD ?
@@ -80,15 +76,12 @@ steps      DWORD ?
 totalDmgLo DWORD ?            ; 64-bit total damage (low part)
 totalDmgHi DWORD ?            ; 64-bit total damage (high part)
 prices     DWORD 3 DUP(?)     ; potion, sword, armor
-gameMap    BYTE MAP_SIZE DUP(?)
-saveEnd    LABEL BYTE
-SAVE_SIZE  = saveEnd - saveStart
 
 ; starting values (same order as pRow ... prices)
 startStats DWORD 1, 1, 100, 100, 10, 3, 1, 0, 20, 3, NO, 0, 0, 0, 0, 0, 15, 40, 35
-defaultName BYTE "HERO",0
 
-; ---------------------- enemies (parallel arrays) ------------
+; ---------------------- monsters (parallel arrays) ----------
+; index = map area = column / 10  (0 = left side ... 3 = right side)
 name1      BYTE "Slime",0
 name2      BYTE "Goblin",0
 name3      BYTE "Skeleton",0
@@ -109,26 +102,16 @@ eGold      DWORD ?
 isBoss     BYTE NO
 
 ; ---------------------- movement keys -----------------------
-moveKeys   BYTE "wsad1234"
-rowChange  SDWORD -1, 1,  0, 0, -1, 1,  0, 0
-colChange  SDWORD  0, 0, -1, 1,  0, 0, -1, 1
+moveKeys   BYTE "wsad"
+rowChange  SDWORD -1, 1,  0, 0
+colChange  SDWORD  0, 0, -1, 1
 
 ; ---------------------- other variables ---------------------
 playerIdx  DWORD ?
 newRow     DWORD ?
 newCol     DWORD ?
 gameWon    BYTE NO
-highScore  DWORD 0
 msgPtr     DWORD ?
-
-; ---------------------- files -------------------------------
-saveFile   BYTE "dungeon.sav",0
-scoreFile  BYTE "highscore.txt",0
-saveSig    BYTE "DUNG"        ; first 4 bytes of a save file
-fileHeader BYTE 4 DUP(?)
-fileHandle DWORD ?
-numBuffer  BYTE 12 DUP(0)
-numLength  DWORD ?
 
 ; ---------------------- strings -----------------------------
 msgLine    BYTE "==========================================",0
@@ -136,21 +119,17 @@ msgTitle   BYTE "        D U N G E O N   O F   A S S E M B L Y",0
 msgHeader  BYTE "==========================================",13,10
            BYTE "        D U N G E O N   O F   A S S E M B L Y",13,10
            BYTE "==========================================",13,10,0
-msgMenu    BYTE 13,10,"   1. New Game",13,10,"   2. Load Game",13,10
-           BYTE "   3. How to Play",13,10,"   4. Exit",13,10,13,10,0
-msgHigh    BYTE "   High Score: ",0
-msgChoice  BYTE 13,10,13,10,"   Enter your choice: ",0
-msgAskName BYTE "Enter your name: ",0
+msgMenu    BYTE 13,10,"   1. New Game",13,10,"   2. How to Play",13,10
+           BYTE "   3. Exit",13,10,13,10,"   Enter your choice: ",0
 msgHelp    BYTE "HOW TO PLAY",13,10,13,10
-           BYTE "- Move with W A S D or 1 2 3 4. Every step gives 1 point.",13,10
-           BYTE "- Enemies may attack while you walk. Stronger ones live in the east.",13,10
+           BYTE "- Move with W A S D. Every step gives 1 point.",13,10
+           BYTE "- M = monster. Walk into it to fight. Monsters get stronger to the right.",13,10
            BYTE "- C = chest (gold)   $ = shop   + = fountain (full heal)",13,10
            BYTE "- K = key. You need the key to enter the boss room B.",13,10
            BYTE "- Kill the DRAGON to win the game.",13,10
            BYTE "- # walls and ~ water cannot be crossed.",13,10,0
 
-msgName    BYTE " Name: ",0
-msgLevel   BYTE "   Level: ",0
+msgLevel   BYTE " Level: ",0
 msgXP      BYTE "   XP: ",0
 msgGold    BYTE "   Gold: ",0
 msgHP      BYTE " HP: ",0
@@ -162,8 +141,7 @@ msgKey     BYTE "   Key: ",0
 msgYes     BYTE "YES",0
 msgNo      BYTE "NO",0
 msgScore   BYTE " Score: ",0
-msgKeys    BYTE " [W/1] Up  [S/2] Down  [A/3] Left  [D/4] Right",13,10
-           BYTE " [5] Drink Potion  [6] Save Game  [7] Quit",13,10,0
+msgKeys    BYTE " [W] Up  [S] Down  [A] Left  [D] Right  [P] Potion  [Q] Quit",13,10,0
 msgInvalid BYTE " Invalid key!",0
 msgAnyKey  BYTE " Press any key to continue...",0
 
@@ -182,61 +160,52 @@ msgLeave   BYTE " 4. Leave the shop",0
 msgBought  BYTE " Item bought!",0
 msgNoMoney BYTE " Not enough gold!",0
 
-msgAppear  BYTE " A wild enemy appears: ",0
+msgAppear  BYTE " A monster blocks the way: ",0
 msgBossApp BYTE " FINAL BATTLE! The boss wakes up: ",0
 msgEnemyHP BYTE "  HP: ",0
 msgYourHP  BYTE " Your HP: ",0
 msgBattle  BYTE " 1. Attack   2. Drink Potion   3. Run Away",0
 msgYouHit  BYTE " You hit the enemy! Damage: ",0
 msgHitsYou BYTE " The enemy hits you! Damage: ",0
-msgCrit    BYTE " CRITICAL HIT!",0
 msgRan     BYTE " You ran away!",0
-msgNoRun   BYTE " You could not escape!",0
+msgNoRun   BYTE " You cannot run from the Dragon!",0
 msgWin     BYTE " You defeated the enemy! XP and gold gained.",0
 msgDead    BYTE " You have been defeated...",0
 msgLevelUp BYTE " LEVEL UP! You are now level ",0
 msgNoPot   BYTE " You have no potions!",0
 msgDrank   BYTE " You drank a potion. HP is now ",0
 
-msgSaved   BYTE " Game saved.",0
-msgSaveErr BYTE " Error: could not save the game.",0
-msgNoSave  BYTE " No save file found.",0
-msgBadSave BYTE " Save file is damaged.",0
-
 msgOver    BYTE "              G A M E   O V E R",0
 msgVictory BYTE "       Y O U   W O N !   The Dragon is dead!",0
 msgKills   BYTE " Enemies killed: ",0
 msgSteps   BYTE "   Steps: ",0
 msgTotDmg  BYTE " Total damage dealt: ",0
-msgNewHigh BYTE " *** NEW HIGH SCORE! ***",0
 
 .code
 ; ============================================================
 main PROC
-    call Randomize
-    call LoadHighScore
-
 menuLoop:
-    call ShowTitle               ; returns key in AL
+    call Clrscr
+    mov eax, yellow
+    call SetTextColor
+    mov edx, OFFSET msgHeader
+    call WriteString
+    mov eax, white
+    call SetTextColor
+    mov edx, OFFSET msgMenu
+    call WriteString
+    call ReadChar
+
     cmp al, '1'
     je optNew
     cmp al, '2'
-    je optLoad
-    cmp al, '3'
     je optHelp
-    cmp al, '4'
+    cmp al, '3'
     je optExit
     jmp menuLoop
 
 optNew:
     call NewGame
-    call PlayGame
-    jmp menuLoop
-
-optLoad:
-    call LoadGame                ; EAX = 1 if loaded
-    cmp eax, 1
-    jne menuLoop
     call PlayGame
     jmp menuLoop
 
@@ -252,29 +221,7 @@ optExit:
 main ENDP
 
 ; ============================================================
-; ShowTitle - draws the main menu, returns the key in AL
-; ============================================================
-ShowTitle PROC
-    call Clrscr
-    mov eax, yellow
-    call SetTextColor
-    mov edx, OFFSET msgHeader
-    call WriteString
-    mov eax, white
-    call SetTextColor
-    mov edx, OFFSET msgMenu
-    call WriteString
-    mov edx, OFFSET msgHigh
-    mov eax, highScore
-    call PrintNum
-    mov edx, OFFSET msgChoice
-    call WriteString
-    call ReadChar
-    ret
-ShowTitle ENDP
-
-; ============================================================
-; NewGame - resets all values and asks the player's name
+; NewGame - copies the starting values and the original map
 ; ============================================================
 NewGame PROC
     cld
@@ -290,59 +237,21 @@ NewGame PROC
     mov ecx, MAP_SIZE
     rep movsb
 
-    call Clrscr
-    mov edx, OFFSET msgAskName
-    call WriteString
-    mov edx, OFFSET playerName
-    mov ecx, NAME_SIZE - 1
-    call ReadString
-    cmp eax, 0                   ; nothing typed?
-    jne nameOk
-    mov esi, OFFSET defaultName
-    mov edi, OFFSET playerName
-    mov ecx, LENGTHOF defaultName
-    rep movsb
-nameOk:
-    call UpperName
+    mov gameWon, NO
     ret
 NewGame ENDP
-
-; ============================================================
-; UpperName - changes the player name to capital letters
-; ============================================================
-UpperName PROC
-    mov esi, OFFSET playerName
-    mov edi, OFFSET playerName
-    mov ecx, NAME_SIZE
-    cld
-upLoop:
-    lodsb                        ; AL = next char
-    cmp al, 'a'
-    jb notSmall
-    cmp al, 'z'
-    ja notSmall
-    and al, 11011111b            ; clear bit 5 -> capital letter
-notSmall:
-    stosb
-    cmp al, 0                    ; stop at the end of the string
-    loopnz upLoop
-    ret
-UpperName ENDP
 
 ; ============================================================
 ; PlayGame - main game loop
 ; ============================================================
 PlayGame PROC
-    mov gameWon, NO
 gameLoop:
     call DrawScreen
     call ReadChar
     or al, 00100000b             ; set bit 5 -> small letter
-    cmp al, '5'
+    cmp al, 'p'
     je usePotion
-    cmp al, '6'
-    je doSave
-    cmp al, '7'
+    cmp al, 'q'
     jne notQuit
     ret                          ; back to the main menu
 notQuit:
@@ -363,13 +272,10 @@ notQuit:
 badKey:
     mov edx, OFFSET msgInvalid
     call WriteString
-    jmp pressKey
+    call WaitKey
+    jmp checkEnd
 usePotion:
     call DrinkPotion
-    jmp pressKey
-doSave:
-    call SaveGame
-pressKey:
     call WaitKey
 
 checkEnd:
@@ -390,7 +296,7 @@ playerLost:
 PlayGame ENDP
 
 ; ============================================================
-; DrawScreen - prints the whole map, the stats and the menu
+; DrawScreen - prints the whole map, the stats and the keys
 ; ============================================================
 DrawScreen PROC
     call Clrscr
@@ -443,10 +349,6 @@ DrawScreen ENDP
 ShowStats PROC
     mov eax, white
     call SetTextColor
-    mov edx, OFFSET msgName
-    call WriteString
-    mov edx, OFFSET playerName
-    call WriteString
     mov edx, OFFSET msgLevel
     mov eax, level
     call PrintNum
@@ -577,6 +479,8 @@ MovePlayer PROC
     je showMsg
     cmp al, 'B'
     je bossRoom
+    cmp al, 'M'
+    je monster
 
     ; the move is allowed
     mov ebx, newRow
@@ -594,17 +498,16 @@ MovePlayer PROC
     cmp al, '+'
     je fountain
     cmp al, '$'
-    jne normalGround
+    jne moveDone
     call Shop
+moveDone:
     ret
 
-normalGround:                    ; maybe a random battle
-    mov eax, 100
-    call RandomRange             ; EAX = 0..99
-    cmp eax, CHANCE
-    jae moveDone
-    call RandomBattle
-moveDone:
+monster:                         ; the player stays, the fight starts
+    call MonsterBattle
+    cmp eHP, 0
+    jne moveDone
+    mov gameMap[edi+esi], '.'    ; monster is dead, remove it
     ret
 
 bossRoom:
@@ -627,13 +530,11 @@ foundKey:
     jmp showMsg
 
 openChest:
-    mov gameMap[edi+esi], '.'        ; chest is now empty
-    mov eax, 21
-    call RandomRange
-    add eax, 10                  ; 10..30 gold
-    add gold, eax
+    mov gameMap[edi+esi], '.'    ; chest is now empty
+    add gold, CHEST_GOLD
     add score, 20
     mov edx, OFFSET msgChest
+    mov eax, CHEST_GOLD
     call PrintNum
     call WaitKey
     ret
@@ -645,25 +546,16 @@ showMsg:
 MovePlayer ENDP
 
 ; ============================================================
-; RandomBattle - picks an enemy and starts the battle
-;   enemies get stronger on the right side of the map
+; MonsterBattle - the monster type depends on the map area:
+;   area = column / 10   (0 = Slime ... 3 = Orc)
 ; ============================================================
-RandomBattle PROC
-    ; zone = column / 10   (0..3)
-    mov eax, pCol
+MonsterBattle PROC USES esi edi
+    mov eax, newCol
     mov edx, 0
     mov ebx, 10
-    div ebx
+    div ebx                      ; EAX = area (0..3)
     mov esi, eax
 
-    ; index = zone + random(0..1), max 3
-    mov eax, 2
-    call RandomRange
-    add esi, eax
-    cmp esi, 3
-    jbe indexOk
-    mov esi, 3
-indexOk:
     mov eax, enemyNames[esi * TYPE enemyNames]
     mov enemyName, eax
 
@@ -677,7 +569,7 @@ indexOk:
     mov eax, enemyGolds[esi * TYPE enemyGolds]
     mov eGold, eax
 
-    ; enemy gets +5 HP for every player level
+    ; monster gets +5 HP for every player level
     mov eax, level
     mov ebx, 5
     mul ebx
@@ -687,7 +579,7 @@ indexOk:
     mov edx, OFFSET msgAppear
     call Battle
     ret
-RandomBattle ENDP
+MonsterBattle ENDP
 
 ; ============================================================
 ; BossBattle - sets up the Dragon and starts the battle
@@ -695,7 +587,7 @@ RandomBattle ENDP
 BossBattle PROC
     mov enemyName, OFFSET bossName
     mov eHP, 180
-    mov eAtk, 16
+    mov eAtk, 20
     mov eXP, 200
     mov eGold, 100
     mov isBoss, YES
@@ -737,13 +629,9 @@ battleLoop:
     cmp al, '3'
     jne battleLoop
 
-    ; ---- run away (50%, not possible against the boss) ----
+    ; ---- run away (always works, but not against the Dragon) ----
     cmp isBoss, YES
     je cannotRun
-    mov eax, 2
-    call RandomRange             ; 0 or 1
-    cmp eax, 0
-    jne cannotRun
     mov edx, OFFSET msgRan
     jmp endBattle
 cannotRun:
@@ -757,7 +645,7 @@ doPotion:
 
 doAttack:
     ; damage = CalcDamage(attack, 0)  (parameters on the stack)
-    push 0                       ; enemies have no defense
+    push 0                       ; monsters have no defense
     push attack
     call CalcDamage              ; EAX = damage
     add totalDmgLo, eax          ; 64-bit addition
@@ -780,6 +668,7 @@ enemyTurn:
     jmp battleLoop
 
 enemyDead:
+    mov eHP, 0
     mov edx, OFFSET msgWin
     call PrintLn
     mov eax, eXP
@@ -810,8 +699,7 @@ Battle ENDP
 ; CalcDamage - uses a stack frame
 ;   [ebp+8]  = attack power
 ;   [ebp+12] = defense
-;   damage = attack + random(0..attack/2) - defense/2
-;   (minimum 1, 10% chance of double damage)
+;   damage = attack - defense/2   (at least 1)
 ;   returns EAX = damage
 ; ============================================================
 CalcDamage PROC
@@ -819,30 +707,14 @@ CalcDamage PROC
     mov ebp, esp
     push ebx
 
-    mov eax, [ebp+8]
-    shr eax, 1                   ; attack / 2
-    inc eax
-    call RandomRange             ; EAX = 0 .. attack/2
-    add eax, [ebp+8]
-
+    mov eax, [ebp+8]             ; EAX = attack
     mov ebx, [ebp+12]
-    shr ebx, 1                   ; defense / 2
+    shr ebx, 1                   ; EBX = defense / 2
     sub eax, ebx
     cmp eax, 1
     jge damageOk
     mov eax, 1                   ; at least 1 damage
 damageOk:
-    mov ebx, eax                 ; EBX = damage
-    mov eax, 10
-    call RandomRange
-    cmp eax, 0                   ; 1 in 10 chance
-    jne noCrit
-    shl ebx, 1                   ; double damage
-    mov edx, OFFSET msgCrit
-    call PrintLn
-noCrit:
-    mov eax, ebx
-
     pop ebx
     pop ebp
     ret 8                        ; remove the 2 parameters
@@ -889,8 +761,7 @@ DrinkPotion PROC
         .ENDIF
         mov hp, eax
         mov edx, OFFSET msgDrank
-        call PrintNum
-        call Crlf
+        call PrintNumLn
     .ENDIF
     ret
 DrinkPotion ENDP
@@ -963,186 +834,6 @@ leaveShop:
 Shop ENDP
 
 ; ============================================================
-; SaveGame - writes "DUNG" + all player data + map to a file
-; ============================================================
-SaveGame PROC
-    mov edx, OFFSET saveFile
-    call CreateOutputFile
-    mov fileHandle, eax
-    mov edx, OFFSET msgSaveErr
-    cmp eax, INVALID_HANDLE_VALUE
-    je saveDone
-
-    mov edx, OFFSET saveSig      ; header
-    mov ecx, LENGTHOF saveSig
-    call WriteToFile
-    mov eax, fileHandle          ; data block
-    mov edx, OFFSET saveStart
-    mov ecx, SAVE_SIZE
-    call WriteToFile
-    mov eax, fileHandle
-    call CloseFile
-    mov edx, OFFSET msgSaved
-saveDone:
-    call WriteString
-    ret
-SaveGame ENDP
-
-; ============================================================
-; LoadGame - reads the save file back
-;   returns EAX = 1 if loaded, 0 if not
-; ============================================================
-LoadGame PROC
-    mov edx, OFFSET saveFile
-    call OpenInputFile
-    mov fileHandle, eax
-    mov edx, OFFSET msgNoSave
-    cmp eax, INVALID_HANDLE_VALUE
-    je loadFail
-
-    mov edx, OFFSET fileHeader   ; read the 4 byte header
-    mov ecx, LENGTHOF fileHeader
-    call ReadFromFile
-
-    ; compare header with "DUNG"
-    mov esi, OFFSET fileHeader
-    mov edi, OFFSET saveSig
-    mov ecx, LENGTHOF saveSig
-    cld
-    repe cmpsb
-    jne badFile
-
-    mov eax, fileHandle
-    mov edx, OFFSET saveStart
-    mov ecx, SAVE_SIZE
-    call ReadFromFile
-    cmp eax, SAVE_SIZE
-    jne badFile
-
-    mov eax, fileHandle
-    call CloseFile
-    mov eax, 1
-    ret
-
-badFile:
-    mov eax, fileHandle
-    call CloseFile
-    mov edx, OFFSET msgBadSave
-loadFail:
-    call WriteString
-    call WaitKey
-    mov eax, 0
-    ret
-LoadGame ENDP
-
-; ============================================================
-; SaveToFile - writes a buffer to a new file
-; ============================================================
-SaveToFile PROC, fileName:PTR BYTE, dataAddr:PTR BYTE, dataSize:DWORD
-    mov edx, fileName
-    call CreateOutputFile
-    cmp eax, INVALID_HANDLE_VALUE
-    je writeFail
-    mov fileHandle, eax
-    mov edx, dataAddr
-    mov ecx, dataSize
-    call WriteToFile
-    mov eax, fileHandle
-    call CloseFile
-writeFail:
-    ret
-SaveToFile ENDP
-
-; ============================================================
-; LoadHighScore - reads highscore.txt (a number as text)
-; ============================================================
-LoadHighScore PROC
-    mov highScore, 0
-    mov edx, OFFSET scoreFile
-    call OpenInputFile
-    cmp eax, INVALID_HANDLE_VALUE
-    je noScoreFile
-    mov fileHandle, eax
-
-    mov edx, OFFSET numBuffer
-    mov ecx, LENGTHOF numBuffer - 1
-    call ReadFromFile
-    jnc readOk                   ; carry flag = read error
-    mov eax, 0
-readOk:
-    mov numBuffer[eax], 0        ; end the string
-    mov eax, fileHandle
-    call CloseFile
-
-    mov esi, OFFSET numBuffer
-    call StrToInt
-    mov highScore, eax
-noScoreFile:
-    ret
-LoadHighScore ENDP
-
-; ============================================================
-; SaveHighScore - writes highScore as text into highscore.txt
-; ============================================================
-SaveHighScore PROC
-    mov eax, highScore
-    mov edi, OFFSET numBuffer
-    call IntToStr                ; EDI now points after the last digit
-    mov ecx, edi
-    sub ecx, OFFSET numBuffer
-    mov numLength, ecx
-    INVOKE SaveToFile, ADDR scoreFile, ADDR numBuffer, numLength
-    ret
-SaveHighScore ENDP
-
-; ============================================================
-; IntToStr - RECURSIVE: converts EAX to decimal digits at [EDI]
-;   example 345 -> IntToStr(34) then write '5'
-; ============================================================
-IntToStr PROC
-    push eax
-    push ebx
-    push edx
-
-    mov edx, 0
-    mov ebx, 10
-    div ebx                      ; EAX = number / 10, EDX = last digit
-    cmp eax, 0
-    je writeDigit
-    call IntToStr                ; first write the other digits
-writeDigit:
-    add dl, '0'
-    mov [edi], dl
-    inc edi
-
-    pop edx
-    pop ebx
-    pop eax
-    ret
-IntToStr ENDP
-
-; ============================================================
-; StrToInt - converts digits at [ESI] to a number in EAX
-; ============================================================
-StrToInt PROC USES ebx ecx edx esi
-    mov eax, 0
-convLoop:
-    movzx ebx, BYTE PTR [esi]
-    cmp bl, '0'
-    jb convDone
-    cmp bl, '9'
-    ja convDone
-    sub bl, '0'
-    mov ecx, 10
-    mul ecx                      ; EAX = EAX * 10
-    add eax, ebx
-    inc esi
-    jmp convLoop
-convDone:
-    ret
-StrToInt ENDP
-
-; ============================================================
 ; EndScreen - game over or victory screen
 ;   EDX = message, EAX = color
 ; ============================================================
@@ -1167,16 +858,6 @@ EndScreen PROC
     mov edx, OFFSET msgTotDmg
     mov eax, totalDmgLo          ; low 32 bits are enough to show
     call PrintNumLn
-
-    ; new high score?
-    mov eax, score
-    cmp eax, highScore
-    jbe notHigh
-    mov highScore, eax
-    call SaveHighScore
-    mov edx, OFFSET msgNewHigh
-    call PrintLn
-notHigh:
     call WaitKey
     ret
 EndScreen ENDP
